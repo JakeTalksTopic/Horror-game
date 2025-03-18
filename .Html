@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Horror Maze Game</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    /* Overlay to instruct the player and block view until the game starts */
+    #blocker {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.5);
+    }
+    #instructions {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 36px;
+      text-align: center;
+      cursor: pointer;
+    }
+    /* Hidden game over message */
+    #gameOver {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px;
+      color: red;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="blocker">
+    <div id="instructions">
+      Click to Play<br>
+      (Use WASD to move, mouse to look)
+    </div>
+  </div>
+  <div id="gameOver">Game Over!</div>
+
+  <!-- Load Three.js and PointerLockControls from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://threejs.org/examples/js/controls/PointerLockControls.js"></script>
+  
+  <script>
+    // Basic scene setup
+    var scene = new THREE.Scene();
+    scene.fog = new THREE.Fog( 0x000000, 0, 750 );
+
+    var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 1, 1000 );
+    var renderer = new THREE.WebGLRenderer();
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    document.body.appendChild( renderer.domElement );
+
+    // Lighting
+    var light = new THREE.HemisphereLight( 0xffffff, 0x444444 );
+    light.position.set( 0, 200, 0 );
+    scene.add( light );
+
+    // PointerLockControls for first-person movement
+    var controls = new THREE.PointerLockControls( camera, document.body );
+    scene.add( controls.getObject() );
+
+    var blocker = document.getElementById('blocker');
+    var instructions = document.getElementById('instructions');
+    instructions.addEventListener('click', function () {
+      controls.lock();
+    }, false);
+    controls.addEventListener('lock', function () {
+      blocker.style.display = 'none';
+    });
+    controls.addEventListener('unlock', function () {
+      blocker.style.display = 'block';
+    });
+
+    // Movement variables
+    var moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    var velocity = new THREE.Vector3();
+
+    document.addEventListener('keydown', function(event) {
+      switch ( event.code ) {
+        case 'ArrowUp':
+        case 'KeyW': moveForward = true; break;
+        case 'ArrowLeft':
+        case 'KeyA': moveLeft = true; break;
+        case 'ArrowDown':
+        case 'KeyS': moveBackward = true; break;
+        case 'ArrowRight':
+        case 'KeyD': moveRight = true; break;
+      }
+    }, false);
+
+    document.addEventListener('keyup', function(event) {
+      switch ( event.code ) {
+        case 'ArrowUp':
+        case 'KeyW': moveForward = false; break;
+        case 'ArrowLeft':
+        case 'KeyA': moveLeft = false; break;
+        case 'ArrowDown':
+        case 'KeyS': moveBackward = false; break;
+        case 'ArrowRight':
+        case 'KeyD': moveRight = false; break;
+      }
+    }, false);
+
+    // Build a simple maze using a 2D grid (1 = wall, 0 = path)
+    var maze = [
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,1],
+      [1,0,1,0,1,0,1,1,0,1],
+      [1,0,1,0,0,0,0,1,0,1],
+      [1,0,1,1,1,1,0,1,0,1],
+      [1,0,0,0,0,1,0,1,0,1],
+      [1,0,1,1,0,1,0,1,0,1],
+      [1,0,0,1,0,0,0,0,0,1],
+      [1,1,0,0,0,1,0,1,0,1],
+      [1,1,1,1,1,1,1,1,1,1]
+    ];
+    var wallSize = 10;
+    var wallGeometry = new THREE.BoxGeometry( wallSize, wallSize, wallSize );
+    var wallMaterial = new THREE.MeshPhongMaterial( { color: 0x888888 } );
+
+    for (var i = 0; i < maze.length; i++) {
+      for (var j = 0; j < maze[i].length; j++) {
+        if (maze[i][j] === 1) {
+          var wall = new THREE.Mesh( wallGeometry, wallMaterial );
+          wall.position.x = (j - maze[i].length / 2) * wallSize;
+          wall.position.y = wallSize / 2;
+          wall.position.z = (i - maze.length / 2) * wallSize;
+          scene.add( wall );
+        }
+      }
+    }
+
+    // Create the floor
+    var floorGeometry = new THREE.PlaneGeometry( maze[0].length * wallSize, maze.length * wallSize );
+    var floorMaterial = new THREE.MeshPhongMaterial( { color: 0x222222 } );
+    var floor = new THREE.Mesh( floorGeometry, floorMaterial );
+    floor.rotation.x = - Math.PI / 2;
+    scene.add( floor );
+
+    // Create a "monster" as a red cube
+    var monsterGeometry = new THREE.BoxGeometry( wallSize, wallSize, wallSize );
+    var monsterMaterial = new THREE.MeshPhongMaterial( { color: 0xff0000 } );
+    var monster = new THREE.Mesh( monsterGeometry, monsterMaterial );
+    // Position the monster (here, near one corner of the maze)
+    monster.position.set( (maze[0].length/2 - 1) * wallSize, wallSize/2, (maze.length/2 - 1) * wallSize );
+    scene.add( monster );
+
+    // Monster chasing speed
+    var monsterSpeed = 0.05;
+    // Flag to determine if game is over
+    var gameOver = false;
+
+    // Simple collision detection: if monster gets close to player, trigger game over
+    function checkCollision() {
+      var playerPos = controls.getObject().position;
+      if (playerPos.distanceTo(monster.position) < wallSize / 2) {
+        gameOver = true;
+        document.getElementById('gameOver').style.display = 'block';
+        controls.unlock();
+      }
+    }
+
+    // Animation loop
+    var clock = new THREE.Clock();
+    function animate() {
+      if (gameOver) return; // Stop updates if game is over
+      requestAnimationFrame( animate );
+      var delta = clock.getDelta();
+
+      // Update player velocity
+      velocity.x -= velocity.x * 10.0 * delta;
+      velocity.z -= velocity.z * 10.0 * delta;
+      var speed = 400.0;
+      if (moveForward) velocity.z -= speed * delta;
+      if (moveBackward) velocity.z += speed * delta;
+      if (moveLeft) velocity.x -= speed * delta;
+      if (moveRight) velocity.x += speed * delta;
+
+      controls.moveRight( - velocity.x * delta );
+      controls.moveForward( - velocity.z * delta );
+
+      // Monster moves toward the player
+      var direction = new THREE.Vector3();
+      direction.subVectors( controls.getObject().position, monster.position ).normalize();
+      monster.position.addScaledVector( direction, monsterSpeed );
+
+      checkCollision();
+      renderer.render( scene, camera );
+    }
+    animate();
+
+    // Adjust the scene on window resize
+    window.addEventListener('resize', function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    }, false);
+  </script>
+</body>
+</html>
